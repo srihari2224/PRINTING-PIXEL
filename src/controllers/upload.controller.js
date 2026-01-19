@@ -13,7 +13,12 @@ exports.uploadFile = async (req, res) => {
     }
 
     const uploadId = uuid()
-    const kioskId = "TEST_KIOSK"
+    const { kioskId } = req.body
+
+    if (!kioskId) {
+      return res.status(400).json({ error: "kioskId missing" })
+    }
+
 
     const s3Key = await uploadToS3(file, kioskId)
 
