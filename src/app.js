@@ -14,9 +14,9 @@ app.get("/", (req, res) => {
   res.send("API running")
 })
 
-module.exports = app
-
 app.use("/api/upload", require("./routes/upload.routes"))
 app.use("/api/otp", require("./routes/otp.routes"))
+
+module.exports = app
 
 
