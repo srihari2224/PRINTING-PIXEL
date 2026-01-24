@@ -30,8 +30,8 @@ exports.createOrder = async (req, res) => {
       })
     }
 
-    const parsedAmount = parseInt(amount)
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+const parsedAmount = typeof amount === 'string' ? parseInt(amount) : amount
+        if (isNaN(parsedAmount) || parsedAmount <= 0) {
       console.error('❌ Invalid amount:', amount)
       return res.status(400).json({ error: 'Invalid amount' })
     }
