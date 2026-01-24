@@ -5,13 +5,11 @@ const { createOTP } = require("../services/otp.service")
 const { v4: uuid } = require("uuid")
 const countPages = require("../utils/countPages")
 
-// Accept multiple files and per-file print options. Do NOT create OTP yet.
 exports.uploadFiles = async (req, res) => {
   try {
     const files = req.files || []
     let printOptions = []
 
-    // printOptions can be sent as JSON string or as object/array
     if (req.body.printOptions) {
       try {
         printOptions = typeof req.body.printOptions === "string" 
@@ -69,7 +67,6 @@ exports.uploadFiles = async (req, res) => {
 
     console.log(`✅ Upload created: ${uploadId} | Total pages: ${totalPages}`)
 
-    // Return uploadId and summary so frontend can open payment window
     res.json({ 
       success: true, 
       uploadId, 
@@ -86,7 +83,6 @@ exports.uploadFiles = async (req, res) => {
   }
 }
 
-// Verify Razorpay payment and generate OTP
 exports.confirmPayment = async (req, res) => {
   try {
     const { uploadId } = req.params
@@ -102,13 +98,11 @@ exports.confirmPayment = async (req, res) => {
       return res.status(400).json({ error: "Payment details missing" })
     }
 
-    // Check if RAZORPAY_KEY_SECRET exists
     if (!process.env.RAZORPAY_KEY_SECRET) {
-      console.error('❌ RAZORPAY_KEY_SECRET not set in environment')
+      console.error('❌ RAZORPAY_KEY_SECRET not set')
       return res.status(500).json({ error: "Server configuration error" })
     }
 
-    // Verify Razorpay payment signature
     const sign = razorpay_order_id + "|" + razorpay_payment_id
     const expectedSign = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
@@ -117,28 +111,22 @@ exports.confirmPayment = async (req, res) => {
 
     if (razorpay_signature !== expectedSign) {
       console.error('❌ Invalid payment signature')
-      console.error('Expected:', expectedSign)
-      console.error('Received:', razorpay_signature)
       return res.status(400).json({ error: "Invalid payment signature" })
     }
 
     console.log('✅ Payment signature verified')
 
-    // Find upload record
     const upload = await Upload.findOne({ uploadId })
     if (!upload) {
       return res.status(404).json({ error: "Upload not found" })
     }
 
-    // Check if already paid
     if (upload.status === "PAID") {
-      console.log('⚠️ Upload already marked as paid')
-      // Still generate OTP if needed
+      console.log('⚠️ Already paid')
       const otp = await createOTP({ uploadId, kioskId: upload.kioskId })
       return res.json({ success: true, otp, message: "Already paid" })
     }
 
-    // Update upload with payment details
     upload.status = "PAID"
     upload.paymentId = razorpay_payment_id
     upload.orderId = razorpay_order_id
@@ -147,7 +135,6 @@ exports.confirmPayment = async (req, res) => {
 
     console.log(`💾 Upload status updated to PAID`)
 
-    // Generate OTP
     const otp = await createOTP({ uploadId, kioskId: upload.kioskId })
 
     console.log(`🎫 OTP generated: ${otp}`)
