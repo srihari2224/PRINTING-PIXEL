@@ -1,86 +1,86 @@
 const Razorpay = require('razorpay')
 
-// Initialize Razorpay only if keys are present
-let razorpay = null
-
-const initRazorpay = () => {
-  const keyId = process.env.RAZORPAY_KEY_ID
-  const keySecret = process.env.RAZORPAY_KEY_SECRET
-
-  if (!keyId || !keySecret) {
-    console.error('❌ RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET not found in environment')
-    console.error('   RAZORPAY_KEY_ID:', keyId ? '✅ Present' : '❌ Missing')
-    console.error('   RAZORPAY_KEY_SECRET:', keySecret ? '✅ Present' : '❌ Missing')
-    return null
-  }
-
-  try {
-    razorpay = new Razorpay({
-      key_id: keyId,
-      key_secret: keySecret
-    })
-    console.log('✅ Razorpay initialized successfully')
-    return razorpay
-  } catch (error) {
-    console.error('❌ Failed to initialize Razorpay:', error.message)
-    return null
-  }
-}
-
-// Initialize on module load
-initRazorpay()
+// DON'T initialize here - do it inside the function instead
 
 // Create Razorpay order
 exports.createOrder = async (req, res) => {
   try {
-    // Re-initialize if not already done (in case env vars were added after startup)
-    if (!razorpay) {
-      razorpay = initRazorpay()
-    }
+    console.log('📥 Received create-order request')
+    console.log('📦 Request body:', JSON.stringify(req.body, null, 2))
 
-    // Check if Razorpay is initialized
-    if (!razorpay) {
-      console.error('❌ Razorpay not configured - Keys missing')
+    // Check if credentials exist
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      console.error('❌ Missing Razorpay credentials')
       return res.status(500).json({ 
-        error: 'Payment gateway not configured',
-        details: 'Razorpay API keys are missing. Please contact administrator.'
+        error: 'Razorpay credentials not configured',
+        debug: {
+          hasKeyId: !!process.env.RAZORPAY_KEY_ID,
+          hasSecret: !!process.env.RAZORPAY_KEY_SECRET
+        }
       })
     }
 
+    // Initialize Razorpay INSIDE the route handler (just like your working project)
+    const razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET
+    })
+
+    console.log('✅ Razorpay initialized successfully')
+
     const { amount, currency, receipt, notes } = req.body
 
+    // Validate input
+    if (!amount || !currency || !receipt) {
+      console.error('❌ Missing required fields')
+      return res.status(400).json({ 
+        error: 'Missing required fields: amount, currency, receipt' 
+      })
+    }
+
     // Validate amount
-    if (!amount || amount <= 0) {
+    if (amount <= 0) {
+      console.error('❌ Invalid amount:', amount)
       return res.status(400).json({ error: 'Invalid amount' })
     }
 
     const options = {
-      amount: amount, // amount in paise
-      currency: currency || 'INR',
-      receipt: receipt || `receipt_${Date.now()}`,
-      notes: notes || {}
+      amount: parseInt(amount), // Ensure it's an integer
+      currency: currency,
+      receipt: receipt,
+      notes: notes || {},
+      payment_capture: 1  // AUTO-CAPTURE ENABLED (just like your working project)
     }
 
-    console.log('📤 Creating Razorpay order:', {
-      amount: options.amount,
-      currency: options.currency,
-      receipt: options.receipt
-    })
+    console.log('📤 Creating Razorpay order with options:', JSON.stringify(options, null, 2))
 
     const order = await razorpay.orders.create(options)
     
-    console.log('✅ Razorpay order created:', order.id)
+    console.log('✅ Order created successfully:', order.id)
+    console.log('📋 Order details:', JSON.stringify(order, null, 2))
 
     res.json({
-      orderId: order.id,
+      id: order.id,           // Return 'id' instead of 'orderId' to match Razorpay response
+      orderId: order.id,      // Keep this for backward compatibility
       amount: order.amount,
-      currency: order.currency
+      currency: order.currency,
+      status: order.status
     })
   } catch (error) {
-    console.error('❌ Razorpay order creation failed:', error)
+    console.error('❌ Order creation FAILED')
+    console.error('Error name:', error.name)
+    console.error('Error message:', error.message)
+    console.error('Error stack:', error.stack)
+    
+    // Log Razorpay-specific error details
+    if (error.error) {
+      console.error('Razorpay error details:', JSON.stringify(error.error, null, 2))
+    }
+    
     res.status(500).json({ 
-      error: 'Failed to create order',
-      details: error.message 
+      error: error.message,
+      details: error.error ? error.error.description : 'Order creation failed',
+      statusCode: error.statusCode
     })
   }
 }
