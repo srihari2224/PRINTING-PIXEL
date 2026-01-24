@@ -3,24 +3,47 @@ const Razorpay = require('razorpay')
 // Initialize Razorpay only if keys are present
 let razorpay = null
 
-if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
-  razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET
-  })
-  console.log('✅ Razorpay initialized')
-} else {
-  console.warn('⚠️  Razorpay keys not found in environment variables')
+const initRazorpay = () => {
+  const keyId = process.env.RAZORPAY_KEY_ID
+  const keySecret = process.env.RAZORPAY_KEY_SECRET
+
+  if (!keyId || !keySecret) {
+    console.error('❌ RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET not found in environment')
+    console.error('   RAZORPAY_KEY_ID:', keyId ? '✅ Present' : '❌ Missing')
+    console.error('   RAZORPAY_KEY_SECRET:', keySecret ? '✅ Present' : '❌ Missing')
+    return null
+  }
+
+  try {
+    razorpay = new Razorpay({
+      key_id: keyId,
+      key_secret: keySecret
+    })
+    console.log('✅ Razorpay initialized successfully')
+    return razorpay
+  } catch (error) {
+    console.error('❌ Failed to initialize Razorpay:', error.message)
+    return null
+  }
 }
+
+// Initialize on module load
+initRazorpay()
 
 // Create Razorpay order
 exports.createOrder = async (req, res) => {
   try {
+    // Re-initialize if not already done (in case env vars were added after startup)
+    if (!razorpay) {
+      razorpay = initRazorpay()
+    }
+
     // Check if Razorpay is initialized
     if (!razorpay) {
-      console.error('❌ Razorpay not configured')
+      console.error('❌ Razorpay not configured - Keys missing')
       return res.status(500).json({ 
-        error: 'Payment gateway not configured. Please contact administrator.' 
+        error: 'Payment gateway not configured',
+        details: 'Razorpay API keys are missing. Please contact administrator.'
       })
     }
 
