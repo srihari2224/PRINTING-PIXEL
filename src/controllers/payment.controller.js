@@ -1,25 +1,34 @@
 const Razorpay = require('razorpay')
 
-// Initialize Razorpay instance
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET
-})
+// Initialize Razorpay only if keys are present
+let razorpay = null
+
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+  razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET
+  })
+  console.log('✅ Razorpay initialized')
+} else {
+  console.warn('⚠️  Razorpay keys not found in environment variables')
+}
 
 // Create Razorpay order
 exports.createOrder = async (req, res) => {
   try {
+    // Check if Razorpay is initialized
+    if (!razorpay) {
+      console.error('❌ Razorpay not configured')
+      return res.status(500).json({ 
+        error: 'Payment gateway not configured. Please contact administrator.' 
+      })
+    }
+
     const { amount, currency, receipt, notes } = req.body
 
     // Validate amount
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: 'Invalid amount' })
-    }
-
-    // Validate Razorpay keys
-    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-      console.error('❌ Razorpay keys not configured')
-      return res.status(500).json({ error: 'Payment gateway not configured' })
     }
 
     const options = {
