@@ -102,6 +102,12 @@ exports.confirmPayment = async (req, res) => {
       return res.status(400).json({ error: "Payment details missing" })
     }
 
+    // Check if RAZORPAY_KEY_SECRET exists
+    if (!process.env.RAZORPAY_KEY_SECRET) {
+      console.error('❌ RAZORPAY_KEY_SECRET not set in environment')
+      return res.status(500).json({ error: "Server configuration error" })
+    }
+
     // Verify Razorpay payment signature
     const sign = razorpay_order_id + "|" + razorpay_payment_id
     const expectedSign = crypto
@@ -111,6 +117,8 @@ exports.confirmPayment = async (req, res) => {
 
     if (razorpay_signature !== expectedSign) {
       console.error('❌ Invalid payment signature')
+      console.error('Expected:', expectedSign)
+      console.error('Received:', razorpay_signature)
       return res.status(400).json({ error: "Invalid payment signature" })
     }
 
@@ -120,6 +128,14 @@ exports.confirmPayment = async (req, res) => {
     const upload = await Upload.findOne({ uploadId })
     if (!upload) {
       return res.status(404).json({ error: "Upload not found" })
+    }
+
+    // Check if already paid
+    if (upload.status === "PAID") {
+      console.log('⚠️ Upload already marked as paid')
+      // Still generate OTP if needed
+      const otp = await createOTP({ uploadId, kioskId: upload.kioskId })
+      return res.json({ success: true, otp, message: "Already paid" })
     }
 
     // Update upload with payment details

@@ -1,18 +1,18 @@
 const Razorpay = require('razorpay')
 
-// DON'T initialize here - do it inside the function instead
-
 // Create Razorpay order
 exports.createOrder = async (req, res) => {
   try {
-    console.log('📥 Received create-order request')
+    console.log('🔥 Received create-order request')
     console.log('📦 Request body:', JSON.stringify(req.body, null, 2))
 
     // Check if credentials exist
     if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
       console.error('❌ Missing Razorpay credentials')
+      console.error('RAZORPAY_KEY_ID present:', !!process.env.RAZORPAY_KEY_ID)
+      console.error('RAZORPAY_KEY_SECRET present:', !!process.env.RAZORPAY_KEY_SECRET)
       return res.status(500).json({ 
-        error: 'Razorpay credentials not configured',
+        error: 'Razorpay credentials not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in environment variables.',
         debug: {
           hasKeyId: !!process.env.RAZORPAY_KEY_ID,
           hasSecret: !!process.env.RAZORPAY_KEY_SECRET
@@ -20,7 +20,7 @@ exports.createOrder = async (req, res) => {
       })
     }
 
-    // Initialize Razorpay INSIDE the route handler (just like your working project)
+    // Initialize Razorpay inside the route handler
     const razorpay = new Razorpay({
       key_id: process.env.RAZORPAY_KEY_ID,
       key_secret: process.env.RAZORPAY_KEY_SECRET
@@ -39,17 +39,18 @@ exports.createOrder = async (req, res) => {
     }
 
     // Validate amount
-    if (amount <= 0) {
+    const parsedAmount = parseInt(amount)
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
       console.error('❌ Invalid amount:', amount)
-      return res.status(400).json({ error: 'Invalid amount' })
+      return res.status(400).json({ error: 'Invalid amount. Must be a positive integer.' })
     }
 
     const options = {
-      amount: parseInt(amount), // Ensure it's an integer
+      amount: parsedAmount,
       currency: currency,
       receipt: receipt,
       notes: notes || {},
-      payment_capture: 1  // AUTO-CAPTURE ENABLED (just like your working project)
+      payment_capture: 1
     }
 
     console.log('📤 Creating Razorpay order with options:', JSON.stringify(options, null, 2))
@@ -60,8 +61,8 @@ exports.createOrder = async (req, res) => {
     console.log('📋 Order details:', JSON.stringify(order, null, 2))
 
     res.json({
-      id: order.id,           // Return 'id' instead of 'orderId' to match Razorpay response
-      orderId: order.id,      // Keep this for backward compatibility
+      id: order.id,
+      orderId: order.id,
       amount: order.amount,
       currency: order.currency,
       status: order.status
@@ -78,7 +79,7 @@ exports.createOrder = async (req, res) => {
     }
     
     res.status(500).json({ 
-      error: error.message,
+      error: error.message || 'Order creation failed',
       details: error.error ? error.error.description : 'Order creation failed',
       statusCode: error.statusCode
     })
