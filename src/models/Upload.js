@@ -17,9 +17,14 @@ const uploadSchema = new mongoose.Schema({
     }
   ],
   totalPages: { type: Number, default: 0 },
-  status: { type: String, default: "PENDING_PAYMENT" },
-  paymentId: { type: String },    // Add this
-  orderId: { type: String },      // Add this
+  status: { 
+    type: String, 
+    enum: ["PENDING_PAYMENT", "PAID", "PRINTING", "COMPLETED", "FAILED"],
+    default: "PENDING_PAYMENT" 
+  },
+  paymentId: { type: String },
+  orderId: { type: String },
+  paidAt: { type: Date },  // Add this field
   createdAt: { type: Date, default: Date.now }
 })
 
