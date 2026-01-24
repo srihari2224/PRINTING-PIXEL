@@ -1,10 +1,8 @@
-// src/models/Upload.js
 const mongoose = require("mongoose")
 
 const uploadSchema = new mongoose.Schema({
   uploadId: { type: String, required: true, unique: true },
   kioskId: { type: String, required: true },
-  // files is an array of objects describing each uploaded PDF
   files: [
     {
       key: String,
@@ -20,6 +18,8 @@ const uploadSchema = new mongoose.Schema({
   ],
   totalPages: { type: Number, default: 0 },
   status: { type: String, default: "PENDING_PAYMENT" },
+  paymentId: { type: String },    // Add this
+  orderId: { type: String },      // Add this
   createdAt: { type: Date, default: Date.now }
 })
 
