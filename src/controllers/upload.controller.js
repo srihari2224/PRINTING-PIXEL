@@ -2,6 +2,7 @@ const crypto = require('crypto')
 const Upload = require("../models/Upload")
 const { uploadToS3 } = require("../services/s3.service")
 const { createOTP } = require("../services/otp.service")
+const { createTransaction } = require("../services/transaction.service")
 const { v4: uuid } = require("uuid")
 const countPages = require("../utils/countPages")
 
@@ -86,7 +87,16 @@ exports.uploadFiles = async (req, res) => {
 exports.confirmPayment = async (req, res) => {
   try {
     const { uploadId } = req.params
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body
+    const { 
+      razorpay_order_id, 
+      razorpay_payment_id, 
+      razorpay_signature,
+      amount,  // Add amount from frontend
+      currency = "INR",
+      customerEmail,
+      customerPhone,
+      paymentMethod
+    } = req.body
 
     console.log(`🔍 Verifying payment for upload: ${uploadId}`)
 
@@ -138,6 +148,31 @@ exports.confirmPayment = async (req, res) => {
     const otp = await createOTP({ uploadId, kioskId: upload.kioskId })
 
     console.log(`🎫 OTP generated: ${otp}`)
+
+    // Create transaction record
+    try {
+      await createTransaction({
+        kioskId: upload.kioskId,
+        uploadId: uploadId,
+        razorpayOrderId: razorpay_order_id,
+        razorpayPaymentId: razorpay_payment_id,
+        razorpaySignature: razorpay_signature,
+        amount: amount, // Amount in paise
+        currency: currency,
+        otpGenerated: otp,
+        customerEmail: customerEmail,
+        customerPhone: customerPhone,
+        paymentMethod: paymentMethod,
+        metadata: {
+          source: 'kiosk_payment',
+          uploadDate: upload.createdAt.toISOString()
+        }
+      })
+      console.log(`✅ Transaction record created for ${uploadId}`)
+    } catch (txnError) {
+      // Log error but don't fail the payment confirmation
+      console.error('⚠️ Failed to create transaction record:', txnError.message)
+    }
 
     res.json({ success: true, otp })
   } catch (err) {

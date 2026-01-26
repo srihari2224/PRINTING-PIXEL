@@ -16,6 +16,7 @@ app.get("/", (req, res) => {
 
 app.use("/api/upload", require("./routes/upload.routes"))
 app.use("/api/otp", require("./routes/otp.routes"))
-app.use("/api/payment", require("./routes/payment.routes")) // Add this line
+app.use("/api/payment", require("./routes/payment.routes"))
+app.use("/api/transactions", require("./routes/transaction.routes")) // Add transaction routes
 
 module.exports = app
