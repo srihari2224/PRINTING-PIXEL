@@ -3,7 +3,8 @@ const Upload = require("../models/Upload")
 const { v4: uuid } = require("uuid")
 
 /**
- * Create a new transaction record after successful payment
+ * Create a new transaction record after payment attempt
+ * ✅ Now supports both SUCCESS and FAILED statuses
  */
 exports.createTransaction = async ({
   kioskId,
@@ -13,6 +14,7 @@ exports.createTransaction = async ({
   razorpaySignature,
   amount,
   currency = "INR",
+  status = "SUCCESS",  // ✅ Allow setting status
   otpGenerated,
   customerEmail,
   customerPhone,
@@ -51,7 +53,7 @@ exports.createTransaction = async ({
       totalPages: upload.totalPages,
       filesCount: upload.files.length,
       printDetails,
-      status: "SUCCESS",
+      status: status,  // ✅ Use provided status
       otpGenerated,
       customerEmail,
       customerPhone,
@@ -59,7 +61,7 @@ exports.createTransaction = async ({
       metadata
     })
 
-    console.log(`✅ Transaction created: ${transactionId} for kiosk: ${kioskId}`)
+    console.log(`✅ Transaction created: ${transactionId} for kiosk: ${kioskId} (Status: ${status})`)
     return transaction
   } catch (error) {
     console.error("❌ Transaction creation failed:", error)
@@ -164,7 +166,6 @@ exports.getKioskTransactions = async (kioskId, options = {}) => {
 exports.getTransactionById = async (transactionId) => {
   try {
     const transaction = await Transaction.findOne({ transactionId })
-      .populate('uploadId')
       .lean()
     
     if (!transaction) {

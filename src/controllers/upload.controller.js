@@ -5,6 +5,7 @@ const { createOTP } = require("../services/otp.service")
 const { createTransaction } = require("../services/transaction.service")
 const { v4: uuid } = require("uuid")
 const countPages = require("../utils/countPages")
+const OTP = require("../models/OTP")
 
 exports.uploadFiles = async (req, res) => {
   try {
@@ -91,15 +92,16 @@ exports.confirmPayment = async (req, res) => {
       razorpay_order_id, 
       razorpay_payment_id, 
       razorpay_signature,
-      amount,  // Add amount from frontend
+      amount,
       currency = "INR",
       customerEmail,
       customerPhone,
       paymentMethod
     } = req.body
 
-    console.log(`🔍 Verifying payment for upload: ${uploadId}`)
+    console.log(`🔐 Verifying payment for upload: ${uploadId}`)
 
+    // ✅ Validation
     if (!uploadId) {
       return res.status(400).json({ error: "uploadId missing" })
     }
@@ -113,6 +115,7 @@ exports.confirmPayment = async (req, res) => {
       return res.status(500).json({ error: "Server configuration error" })
     }
 
+    // ✅ Verify signature
     const sign = razorpay_order_id + "|" + razorpay_payment_id
     const expectedSign = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
@@ -121,22 +124,73 @@ exports.confirmPayment = async (req, res) => {
 
     if (razorpay_signature !== expectedSign) {
       console.error('❌ Invalid payment signature')
+      
+      // ✅ Create failed transaction record
+      const upload = await Upload.findOne({ uploadId })
+      if (upload) {
+        try {
+          await createTransaction({
+            kioskId: upload.kioskId,
+            uploadId: uploadId,
+            razorpayOrderId: razorpay_order_id,
+            razorpayPaymentId: razorpay_payment_id,
+            razorpaySignature: razorpay_signature,
+            amount: amount || 0,
+            currency: currency,
+            status: "FAILED",
+            metadata: {
+              source: 'kiosk_payment',
+              failureReason: 'Invalid signature'
+            }
+          })
+        } catch (txnError) {
+          console.error('⚠️ Failed to create failed transaction record:', txnError.message)
+        }
+      }
+      
       return res.status(400).json({ error: "Invalid payment signature" })
     }
 
     console.log('✅ Payment signature verified')
 
+    // ✅ Get upload details
     const upload = await Upload.findOne({ uploadId })
     if (!upload) {
       return res.status(404).json({ error: "Upload not found" })
     }
 
+    // ✅ Check if already paid - return existing OTP
     if (upload.status === "PAID") {
-      console.log('⚠️ Already paid')
-      const otp = await createOTP({ uploadId, kioskId: upload.kioskId })
-      return res.json({ success: true, otp, message: "Already paid" })
+      console.log('⚠️ Already paid, checking for existing OTP')
+      
+      // Try to find existing OTP
+      const existingOTP = await OTP.findOne({ 
+        uploadId, 
+        kioskId: upload.kioskId,
+        used: false,
+        expiresAt: { $gt: new Date() }
+      }).sort({ createdAt: -1 })
+      
+      if (existingOTP) {
+        console.log('✅ Returning existing valid OTP')
+        return res.json({ 
+          success: true, 
+          otp: existingOTP.otp, 
+          message: "Payment already processed" 
+        })
+      }
+      
+      // If no valid OTP exists, create a new one
+      const newOTP = await createOTP({ uploadId, kioskId: upload.kioskId })
+      console.log('✅ Created new OTP for existing payment')
+      return res.json({ 
+        success: true, 
+        otp: newOTP, 
+        message: "Payment already processed, new OTP generated" 
+      })
     }
 
+    // ✅ Update upload status
     upload.status = "PAID"
     upload.paymentId = razorpay_payment_id
     upload.orderId = razorpay_order_id
@@ -145,11 +199,11 @@ exports.confirmPayment = async (req, res) => {
 
     console.log(`💾 Upload status updated to PAID`)
 
+    // ✅ Generate OTP
     const otp = await createOTP({ uploadId, kioskId: upload.kioskId })
-
     console.log(`🎫 OTP generated: ${otp}`)
 
-    // Create transaction record
+    // ✅ Create transaction record - this is CRITICAL, don't silently fail
     try {
       await createTransaction({
         kioskId: upload.kioskId,
@@ -157,8 +211,9 @@ exports.confirmPayment = async (req, res) => {
         razorpayOrderId: razorpay_order_id,
         razorpayPaymentId: razorpay_payment_id,
         razorpaySignature: razorpay_signature,
-        amount: amount, // Amount in paise
+        amount: amount,
         currency: currency,
+        status: "SUCCESS",
         otpGenerated: otp,
         customerEmail: customerEmail,
         customerPhone: customerPhone,
@@ -170,8 +225,17 @@ exports.confirmPayment = async (req, res) => {
       })
       console.log(`✅ Transaction record created for ${uploadId}`)
     } catch (txnError) {
-      // Log error but don't fail the payment confirmation
-      console.error('⚠️ Failed to create transaction record:', txnError.message)
+      // ⚠️ Log error prominently - this is a data integrity issue
+      console.error('🚨 CRITICAL: Failed to create transaction record:', txnError.message)
+      console.error('Upload ID:', uploadId, 'Payment ID:', razorpay_payment_id)
+      
+      // Still return success to user since payment went through
+      // but flag for manual reconciliation
+      return res.json({ 
+        success: true, 
+        otp,
+        warning: "Payment successful but transaction record may be incomplete. Contact support if issues arise."
+      })
     }
 
     res.json({ success: true, otp })

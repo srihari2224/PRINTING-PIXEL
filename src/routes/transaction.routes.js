@@ -8,19 +8,16 @@ const {
   getRecentTransactions
 } = require("../controllers/transaction.controller")
 
+// ✅ CRITICAL: Specific routes MUST come before generic parameterized routes
 // Create a new transaction
 router.post("/", createTransactionRecord)
 
-// Get a specific transaction by ID
-router.get("/:transactionId", getTransaction)
-
-// Get all transactions for a specific kiosk with pagination and filters
-router.get("/kiosk/:kioskId", getKioskTransactionHistory)
-
-// Get recent transactions for a kiosk
+// ✅ Specific routes first (these have literal path segments)
 router.get("/kiosk/:kioskId/recent", getRecentTransactions)
-
-// Get statistics for a specific kiosk
 router.get("/kiosk/:kioskId/stats", getKioskStatistics)
+
+// ✅ Generic routes last (these only have parameters)
+router.get("/kiosk/:kioskId", getKioskTransactionHistory)
+router.get("/:transactionId", getTransaction)
 
 module.exports = router
