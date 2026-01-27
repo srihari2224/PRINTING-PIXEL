@@ -19,4 +19,6 @@ app.use("/api/otp", require("./routes/otp.routes"))
 app.use("/api/payment", require("./routes/payment.routes"))
 app.use("/api/transactions", require("./routes/transaction.routes")) // Add transaction routes
 
+app.use("/api/test", require("./routes/test.routes"))
+
 module.exports = app

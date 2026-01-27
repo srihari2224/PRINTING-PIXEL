@@ -13,8 +13,7 @@ const transactionSchema = new mongoose.Schema({
   },
   uploadId: { 
     type: String, 
-    required: true,
-    ref: 'Upload'
+    required: true
   },
   
   // Payment Details
