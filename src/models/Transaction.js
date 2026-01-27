@@ -100,7 +100,6 @@ transactionSchema.index({ kioskId: 1, createdAt: -1 })
 // Update the updatedAt timestamp before saving
 transactionSchema.pre('save', function(next) {
   this.updatedAt = new Date()
-  next()
 })
 
 module.exports = mongoose.model("Transaction", transactionSchema)
