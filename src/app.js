@@ -14,6 +14,15 @@ app.get("/", (req, res) => {
   res.send("API running")
 })
 
+// ── Keep-alive health check (pinged by UptimeRobot every 5 min) ──
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+  })
+})
+
 app.use("/api/upload", require("./routes/upload.routes"))
 app.use("/api/otp", require("./routes/otp.routes"))
 app.use("/api/payment", require("./routes/payment.routes"))
