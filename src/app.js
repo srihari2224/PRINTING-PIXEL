@@ -30,5 +30,6 @@ app.use("/api/transactions", require("./routes/transaction.routes")) // Add tran
 
 app.use("/api/test", require("./routes/test.routes"))
 app.use("/api/kiosks", require("./routes/kiosk.routes"))
+app.use("/api/shop", require("./routes/shop.routes"))
 
 module.exports = app
