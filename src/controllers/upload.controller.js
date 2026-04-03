@@ -1,4 +1,5 @@
 const crypto = require('crypto')
+const pdf   = require('pdf-parse')
 const Upload = require("../models/Upload")
 const { uploadToS3 } = require("../services/s3.service")
 const { createOTP } = require("../services/otp.service")
@@ -6,6 +7,37 @@ const { createTransaction } = require("../services/transaction.service")
 const { v4: uuid } = require("uuid")
 const countPages = require("../utils/countPages")
 const OTP = require("../models/OTP")
+
+// ── Validate a PDF buffer: detects corrupt / encrypted files ─────────────────
+async function validatePdf(buffer, filename) {
+  try {
+    await pdf(buffer, { max: 1 })   // parse just 1 page — enough to validate
+  } catch (err) {
+    const msg = err.message || ''
+    if (msg.includes('encrypt') || msg.includes('password')) {
+      throw new Error(`"${filename}" is password-protected. Please remove the password before uploading.`)
+    }
+    throw new Error(`"${filename}" appears to be corrupted or is an invalid PDF.`)
+  }
+}
+
+// ── Magic-byte check for images (guards against renamed executables) ──────────
+const IMAGE_SIGNATURES = [
+  { bytes: [0xFF, 0xD8, 0xFF], mime: 'image/jpeg' },
+  { bytes: [0x89, 0x50, 0x4E, 0x47], mime: 'image/png' },
+  { bytes: [0x47, 0x49, 0x46], mime: 'image/gif' },
+  { bytes: [0x52, 0x49, 0x46, 0x46], mime: 'image/webp' },
+]
+
+function validateImageMagicBytes(buffer, filename) {
+  const header = Array.from(buffer.slice(0, 8))
+  const valid = IMAGE_SIGNATURES.some(sig =>
+    sig.bytes.every((b, i) => header[i] === b)
+  )
+  if (!valid) {
+    throw new Error(`"${filename}" does not appear to be a valid image file.`)
+  }
+}
 
 exports.uploadFiles = async (req, res) => {
   try {
@@ -37,9 +69,20 @@ exports.uploadFiles = async (req, res) => {
       const file = files[i]
       const opts = (printOptions && printOptions[i]) || {}
 
-      console.log(`📄 Uploading file ${i + 1}: ${file.originalname}`)
+      console.log(`📄 Validating file ${i + 1}: ${file.originalname}`)
+
+      // ── Validate before touching S3 ─────────────────────────────────────
+      if (file.mimetype === 'application/pdf') {
+        await validatePdf(file.buffer, file.originalname)
+      } else if (file.mimetype && file.mimetype.startsWith('image/')) {
+        validateImageMagicBytes(file.buffer, file.originalname)
+      }
+
+      console.log(`📤 Uploading file ${i + 1}: ${file.originalname}`)
       const s3Key = await uploadToS3(file, kioskId)
-      const pageCount = await countPages(file.buffer)
+      const pageCount = file.mimetype === 'application/pdf'
+        ? await countPages(file.buffer)
+        : 1   // images count as 1 page
 
       const copies = opts.copies ? Number(opts.copies) : 1
       totalPages += pageCount * copies
@@ -81,7 +124,14 @@ exports.uploadFiles = async (req, res) => {
     })
   } catch (err) {
     console.error('❌ Upload failed:', err)
-    res.status(500).json({ error: "Upload failed", details: err.message })
+    // Validation errors should return 400, not 500
+    const is400 = err.message && (
+      err.message.includes('password') ||
+      err.message.includes('corrupted') ||
+      err.message.includes('invalid') ||
+      err.message.includes('does not appear')
+    )
+    res.status(is400 ? 400 : 500).json({ error: err.message || "Upload failed" })
   }
 }
 
