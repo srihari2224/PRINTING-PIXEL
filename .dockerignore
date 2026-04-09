@@ -1,0 +1,17 @@
+# ── Exclude heavy folders that should never go into the image ──
+node_modules
+.git
+.gitignore
+
+# ── Logs and temp files ────────────────────────────────────────
+*.log
+logs/
+
+# ── Local env file — inject secrets via docker-compose instead ─
+.env
+
+# ── Editor / OS noise ──────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode
+.idea
