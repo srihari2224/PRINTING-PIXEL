@@ -143,6 +143,24 @@ function initSocket(server) {
       }
     })
 
+    // ── update:started — agent acknowledged OTA command ─────────────────
+    socket.on("update:started", (data) => {
+      console.log(`🔄 OTA update started on ${kioskId} (current: ${data?.version})`)
+      const agent = connectedAgents.get(kioskId)
+      if (agent) agent.updating = true
+    })
+
+    // ── update:done — agent finished self-update ─────────────────────────
+    socket.on("update:done", (data) => {
+      const agent = connectedAgents.get(kioskId)
+      if (agent) agent.updating = false
+      if (data?.success) {
+        console.log(`✅ OTA done on ${kioskId} | was v${data.previousVersion} | ${data.output}`)
+      } else {
+        console.error(`❌ OTA FAILED on ${kioskId}: ${data?.error}`)
+      }
+    })
+
     // ── disconnect ──────────────────────────────────────────────────────
     socket.on("disconnect", (reason) => {
       console.log(`🔴 Agent disconnected: ${kioskId} (${reason})`)
@@ -226,10 +244,44 @@ function getConnectedAgents() {
   return agents
 }
 
+/**
+ * Push OTA update command to ALL connected agents.
+ * Each agent runs git pull + npm install + pm2 restart.
+ * Returns count of agents that received the command.
+ */
+function pushUpdateToAll(version) {
+  if (!io) return 0
+  let count = 0
+  for (const [kioskId] of connectedAgents) {
+    const room = io.sockets.adapter.rooms.get(kioskId)
+    if (room && room.size > 0) {
+      io.to(kioskId).emit("agent:update", { version: version || "latest" })
+      count++
+      console.log(`📡 Sent OTA update command to: ${kioskId}`)
+    }
+  }
+  console.log(`🚀 OTA update broadcast sent to ${count} agents`)
+  return count
+}
+
+/**
+ * Push OTA update to a single kiosk.
+ */
+function pushUpdateToKiosk(kioskId, version) {
+  if (!io) return false
+  const room = io.sockets.adapter.rooms.get(kioskId)
+  if (!room || room.size === 0) return false
+  io.to(kioskId).emit("agent:update", { version: version || "latest" })
+  console.log(`📡 OTA update sent to: ${kioskId}`)
+  return true
+}
+
 module.exports = {
   initSocket,
   getIO,
   emitPrintJob,
   isAgentOnline,
-  getConnectedAgents
+  getConnectedAgents,
+  pushUpdateToAll,
+  pushUpdateToKiosk
 }

@@ -28,6 +28,7 @@ app.use("/api/otp", require("./routes/otp.routes"))
 app.use("/api/payment", require("./routes/payment.routes"))
 app.use("/api/transactions", require("./routes/transaction.routes"))
 app.use("/api/printjobs", require("./routes/printjob.routes"))
+app.use("/api/agents", require("./routes/agents.routes"))
 
 app.use("/api/test", require("./routes/test.routes"))
 app.use("/api/kiosks", require("./routes/kiosk.routes"))
