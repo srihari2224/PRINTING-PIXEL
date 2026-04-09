@@ -161,3 +161,39 @@ exports.reactivateOTP = async (req, res) => {
     res.status(500).json({ error: "OTP reactivation failed", details: err.message })
   }
 }
+
+/**
+ * Sync OTP used status to all transactions for a kiosk.
+ * POST /api/otp/sync-status
+ * Body: { kioskId }  (optional — if omitted, syncs all)
+ */
+exports.syncOTPStatus = async (req, res) => {
+  try {
+    const { kioskId } = req.body
+    const query = kioskId ? { kioskId, used: true } : { used: true }
+    const usedOTPs = await OTP.find(query)
+
+    let synced = 0
+    for (const otpRecord of usedOTPs) {
+      // Try uploadId match first
+      const result = await Transaction.updateOne(
+        { uploadId: otpRecord.uploadId, kioskId: otpRecord.kioskId, otpUsed: { $ne: true } },
+        { $set: { otpUsed: true } }
+      )
+      if (result.modifiedCount === 0) {
+        // Fallback: match by OTP string
+        await Transaction.updateOne(
+          { otpGenerated: otpRecord.otp, kioskId: otpRecord.kioskId, otpUsed: { $ne: true } },
+          { $set: { otpUsed: true } }
+        )
+      }
+      synced++
+    }
+
+    console.log(`✅ OTP status sync complete: ${synced} records processed`)
+    res.json({ success: true, processed: synced })
+  } catch (err) {
+    console.error('❌ OTP sync failed:', err)
+    res.status(500).json({ error: "Sync failed", details: err.message })
+  }
+}
