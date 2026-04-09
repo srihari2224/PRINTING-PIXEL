@@ -1,6 +1,7 @@
 const OTP = require("../models/OTP")
 const Upload = require("../models/Upload")
 const PrintJob = require("../models/PrintJob")
+const Transaction = require("../models/Transaction")
 const s3 = require("../config/s3")
 const { emitPrintJob, isAgentOnline } = require("../socket/socketHandler")
 
@@ -32,6 +33,12 @@ exports.verifyOTP = async (req, res) => {
     record.used = true
     await record.save()
     console.log('✅ OTP marked as used')
+
+    // Sync otpUsed on Transaction
+    await Transaction.updateOne(
+      { uploadId: record.uploadId, kioskId },
+      { $set: { otpUsed: true } }
+    )
 
     // Get upload data
     const upload = await Upload.findOne({ uploadId: record.uploadId })
@@ -102,5 +109,41 @@ exports.verifyOTP = async (req, res) => {
   } catch (err) {
     console.error('❌ OTP verification failed:', err)
     res.status(500).json({ error: "OTP verification failed", details: err.message })
+  }
+}
+
+/**
+ * Reactivate an already-used OTP so it can be used again.
+ * POST /api/otp/reactivate
+ * Body: { uploadId, kioskId }
+ */
+exports.reactivateOTP = async (req, res) => {
+  try {
+    const { uploadId, kioskId } = req.body
+    if (!uploadId || !kioskId) {
+      return res.status(400).json({ error: "uploadId and kioskId are required" })
+    }
+
+    const record = await OTP.findOne({ uploadId, kioskId })
+    if (!record) {
+      return res.status(404).json({ error: "OTP record not found" })
+    }
+
+    record.used = false
+    // Extend expiry by 3 days from now
+    record.expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+    await record.save()
+
+    // Also mark otp_used = false in Transaction if linked
+    await Transaction.updateOne(
+      { uploadId, kioskId },
+      { $set: { otpUsed: false } }
+    )
+
+    console.log(`✅ OTP reactivated for uploadId: ${uploadId}`)
+    res.json({ success: true, otp: record.otp, message: "OTP reactivated successfully" })
+  } catch (err) {
+    console.error('❌ OTP reactivation failed:', err)
+    res.status(500).json({ error: "OTP reactivation failed", details: err.message })
   }
 }

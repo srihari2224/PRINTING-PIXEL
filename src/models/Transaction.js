@@ -69,8 +69,12 @@ const transactionSchema = new mongoose.Schema({
   },
   
   // OTP Details
-  otpGenerated: { 
+  otpGenerated: {
     type: String  // The OTP that was generated after payment
+  },
+  otpUsed: {
+    type: Boolean,
+    default: false  // Set to true when OTP is verified; reactivation resets to false
   },
   
   // Additional Info
