@@ -1,5 +1,6 @@
 const crypto = require('crypto')
 const pdf   = require('pdf-parse')
+const Razorpay = require('razorpay')
 const Upload = require("../models/Upload")
 const { uploadToS3 } = require("../services/s3.service")
 const { createOTP } = require("../services/otp.service")
@@ -240,6 +241,23 @@ exports.confirmPayment = async (req, res) => {
       })
     }
 
+    // ✅ Fetch phone number from Razorpay API (response.contact not available client-side)
+    let resolvedPhone = customerPhone || ''
+    let resolvedEmail = customerEmail || ''
+    let resolvedMethod = paymentMethod || ''
+    try {
+      if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+        const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET })
+        const payment = await rzp.payments.fetch(razorpay_payment_id)
+        if (payment.contact) resolvedPhone = payment.contact
+        if (payment.email) resolvedEmail = payment.email
+        if (payment.method) resolvedMethod = payment.method
+        console.log(`📱 Resolved phone from Razorpay: ${resolvedPhone}`)
+      }
+    } catch (rzpErr) {
+      console.warn('⚠️ Could not fetch Razorpay payment details:', rzpErr.message)
+    }
+
     // ✅ Update upload status
     upload.status = "PAID"
     upload.paymentId = razorpay_payment_id
@@ -265,9 +283,9 @@ exports.confirmPayment = async (req, res) => {
         currency: currency,
         status: "SUCCESS",
         otpGenerated: otp,
-        customerEmail: customerEmail,
-        customerPhone: customerPhone,
-        paymentMethod: paymentMethod,
+        customerEmail: resolvedEmail,
+        customerPhone: resolvedPhone,
+        paymentMethod: resolvedMethod,
         metadata: {
           source: 'kiosk_payment',
           uploadDate: upload.createdAt.toISOString()

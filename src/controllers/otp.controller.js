@@ -34,11 +34,19 @@ exports.verifyOTP = async (req, res) => {
     await record.save()
     console.log('✅ OTP marked as used')
 
-    // Sync otpUsed on Transaction
-    await Transaction.updateOne(
+    // Sync otpUsed on Transaction — try uploadId first, fallback to otpGenerated
+    const txUpdate = await Transaction.updateOne(
       { uploadId: record.uploadId, kioskId },
       { $set: { otpUsed: true } }
     )
+    if (txUpdate.modifiedCount === 0) {
+      // Fallback: match by the OTP value itself in case uploadId is stale/missing
+      await Transaction.updateOne(
+        { otpGenerated: otp, kioskId },
+        { $set: { otpUsed: true } }
+      )
+      console.log('⚠️ Used fallback OTP string match for otpUsed sync')
+    }
 
     // Get upload data
     const upload = await Upload.findOne({ uploadId: record.uploadId })
@@ -134,11 +142,17 @@ exports.reactivateOTP = async (req, res) => {
     record.expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
     await record.save()
 
-    // Also mark otp_used = false in Transaction if linked
-    await Transaction.updateOne(
+    // Sync otpUsed = false in Transaction
+    const reactivateTxUpdate = await Transaction.updateOne(
       { uploadId, kioskId },
       { $set: { otpUsed: false } }
     )
+    if (reactivateTxUpdate.modifiedCount === 0) {
+      await Transaction.updateOne(
+        { otpGenerated: record.otp, kioskId },
+        { $set: { otpUsed: false } }
+      )
+    }
 
     console.log(`✅ OTP reactivated for uploadId: ${uploadId}`)
     res.json({ success: true, otp: record.otp, message: "OTP reactivated successfully" })
