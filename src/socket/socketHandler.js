@@ -108,27 +108,54 @@ function initSocket(server) {
       }
     })
 
-    // ── print:printer_progress — agent reports per-printer live status ───
+    // ── print:printer_progress ─ agent reports per-printer live status ──────────────
+    // Uses two atomic operations to avoid Mongoose optimistic-concurrency
+    // conflicts (VersionError) when many page-tick events arrive in rapid
+    // succession for the same document.
     socket.on("print:printer_progress", async (data) => {
       try {
-        const { printJobId, printer, printerName, status, filesDone, filesTotal, currentFile, error } = data
-        const job = await PrintJob.findById(printJobId)
-        if (!job) return
+        const {
+          printJobId, printer, printerName, status,
+          filesDone, filesTotal, pagesDone, pagesTotal,
+          currentFile, error
+        } = data
 
-        if (!job.printerProgress) job.printerProgress = []
-        const existing = job.printerProgress.find(p => p.printer === printer)
-        if (existing) {
-          if (printerName  !== undefined) existing.printerName  = printerName
-          if (status       !== undefined) existing.status       = status
-          if (filesDone    !== undefined) existing.filesDone    = filesDone
-          if (filesTotal   !== undefined) existing.filesTotal   = filesTotal
-          if (currentFile  !== undefined) existing.currentFile  = currentFile
-          if (error        !== undefined) existing.error        = error
-        } else {
-          job.printerProgress.push({ printer, printerName, status, filesDone, filesTotal, currentFile, error })
+        const setFields = {}
+        if (printerName  !== undefined) setFields["printerProgress.$.printerName"]  = printerName
+        if (status       !== undefined) setFields["printerProgress.$.status"]       = status
+        if (filesDone    !== undefined) setFields["printerProgress.$.filesDone"]    = filesDone
+        if (filesTotal   !== undefined) setFields["printerProgress.$.filesTotal"]   = filesTotal
+        if (pagesDone    !== undefined) setFields["printerProgress.$.pagesDone"]    = pagesDone
+        if (pagesTotal   !== undefined) setFields["printerProgress.$.pagesTotal"]   = pagesTotal
+        if (currentFile  !== undefined) setFields["printerProgress.$.currentFile"]  = currentFile
+        if (error        !== undefined) setFields["printerProgress.$.error"]        = error
+
+        // Try to update an existing entry for this printer slot atomically
+        const updated = await PrintJob.findOneAndUpdate(
+          { _id: printJobId, "printerProgress.printer": printer },
+          { $set: setFields },
+          { new: false }
+        )
+
+        if (!updated) {
+          // No entry yet for this printer — push a new one atomically
+          await PrintJob.findByIdAndUpdate(
+            printJobId,
+            {
+              $push: {
+                printerProgress: {
+                  printer, printerName, status,
+                  filesDone: filesDone ?? 0,
+                  filesTotal: filesTotal ?? 0,
+                  pagesDone: pagesDone ?? 0,
+                  pagesTotal: pagesTotal ?? 0,
+                  currentFile: currentFile ?? null,
+                  error: error ?? null
+                }
+              }
+            }
+          )
         }
-        job.markModified("printerProgress")
-        await job.save()
       } catch (err) {
         console.error("print:printer_progress error:", err.message)
       }
