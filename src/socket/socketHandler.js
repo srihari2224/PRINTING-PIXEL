@@ -77,31 +77,32 @@ function initSocket(server) {
 function handleFrontendConnection(socket) {
   console.log(`🖥️  Frontend connected: ${socket.id}`)
 
-  // Frontend subscribes to a specific print job's live events
+  // Subscribe to a specific print job
   socket.on("job:subscribe", ({ printJobId }) => {
     if (!printJobId) return
-    const room = `job:${printJobId}`
-    socket.join(room)
-    console.log(`🖥️  Frontend ${socket.id} subscribed to ${room}`)
-
-    // Immediately send the current DB state as a snapshot
+    socket.join(`job:${printJobId}`)
     PrintJob.findById(printJobId)
       .then(job => {
-        if (job) {
-          socket.emit("job:snapshot", {
-            printJobId,
-            status:          job.status,
-            printerProgress: job.printerProgress || [],
-            results:         job.results || [],
-            failureReason:   job.failureReason || null
-          })
-        }
+        if (job) socket.emit("job:snapshot", {
+          printJobId, status: job.status,
+          printerProgress: job.printerProgress || [],
+          results: job.results || [], failureReason: job.failureReason || null
+        })
       })
       .catch(err => console.error("job:snapshot error:", err.message))
   })
 
   socket.on("job:unsubscribe", ({ printJobId }) => {
     if (printJobId) socket.leave(`job:${printJobId}`)
+  })
+
+  // Subscribe to live printer status for a kiosk
+  socket.on("kiosk:watch", ({ kioskId }) => {
+    if (kioskId) socket.join(`kiosk:${kioskId}`)
+  })
+
+  socket.on("kiosk:unwatch", ({ kioskId }) => {
+    if (kioskId) socket.leave(`kiosk:${kioskId}`)
   })
 
   socket.on("disconnect", () => {
@@ -211,7 +212,7 @@ function handleAgentConnection(socket) {
         })
       }
 
-      // ── Forward live to frontend watchers immediately ─────────────────────
+      // Forward live to frontend watchers immediately
       forwardToFrontend(printJobId, "print:printer_progress", data)
 
     } catch (err) {
@@ -277,9 +278,20 @@ function handleAgentConnection(socket) {
       }
 
       console.log(`✅ Job ${printJobId} completed: ${finalStatus}`)
-    } catch (err) {
-      console.error("print:result error:", err.message)
-    }
+  } catch (err) {
+    console.error("print:result error:", err.message)
+  }
+  })
+
+  // ── kiosk:printer_status — forward live printer state to kiosk frontend room
+  socket.on("kiosk:printer_status", (data) => {
+    if (!io) return
+    io.to(`kiosk:${kioskId}`).emit("kiosk:printer_status", data)
+  })
+
+  // ── print:retry_ack — agent confirmed cupsenable
+  socket.on("print:retry_ack", (data) => {
+    forwardToFrontend(data.printJobId, "print:retry_ack", data)
   })
 
   // ── OTA events ─────────────────────────────────────────────────────────────
