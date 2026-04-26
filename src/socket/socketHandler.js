@@ -95,7 +95,7 @@ function initSocket(server) {
       }
     })
 
-    // ── print:progress — agent reports progress ─────────────────────────
+    // ── print:progress — agent reports overall progress ─────────────────
     socket.on("print:progress", async (data) => {
       try {
         const { printJobId, status } = data
@@ -108,10 +108,36 @@ function initSocket(server) {
       }
     })
 
+    // ── print:printer_progress — agent reports per-printer live status ───
+    socket.on("print:printer_progress", async (data) => {
+      try {
+        const { printJobId, printer, printerName, status, filesDone, filesTotal, currentFile, error } = data
+        const job = await PrintJob.findById(printJobId)
+        if (!job) return
+
+        if (!job.printerProgress) job.printerProgress = []
+        const existing = job.printerProgress.find(p => p.printer === printer)
+        if (existing) {
+          if (printerName  !== undefined) existing.printerName  = printerName
+          if (status       !== undefined) existing.status       = status
+          if (filesDone    !== undefined) existing.filesDone    = filesDone
+          if (filesTotal   !== undefined) existing.filesTotal   = filesTotal
+          if (currentFile  !== undefined) existing.currentFile  = currentFile
+          if (error        !== undefined) existing.error        = error
+        } else {
+          job.printerProgress.push({ printer, printerName, status, filesDone, filesTotal, currentFile, error })
+        }
+        job.markModified("printerProgress")
+        await job.save()
+      } catch (err) {
+        console.error("print:printer_progress error:", err.message)
+      }
+    })
+
     // ── print:result — agent finished printing ──────────────────────────
     socket.on("print:result", async (data) => {
       try {
-        const { printJobId, success, results, error } = data
+        const { printJobId, success, results, error, failureReason } = data
 
         const allSuccess = results?.every(r => r.success) ?? success
         const anySuccess = results?.some(r => r.success) ?? success
@@ -120,11 +146,21 @@ function initSocket(server) {
         if (!anySuccess) finalStatus = "FAILED"
         else if (!allSuccess) finalStatus = "PARTIAL_FAILURE"
 
+        // Build a human-readable failure reason if not provided by agent
+        let reason = failureReason || error || null
+        if (!reason && finalStatus !== "COMPLETED") {
+          const failedFiles = (results || []).filter(r => !r.success)
+          if (failedFiles.length > 0) {
+            reason = failedFiles.map(r => `${r.filename}: ${r.error || 'Unknown error'}`).join(" | ")
+          }
+        }
+
         await PrintJob.findByIdAndUpdate(printJobId, {
-          status: finalStatus,
-          results: results || [],
-          completedAt: new Date(),
-          error: error || null
+          status:          finalStatus,
+          results:         results || [],
+          failureReason:   reason,
+          completedAt:     new Date(),
+          error:           error || null
         })
 
         // Also update Upload status
@@ -133,8 +169,25 @@ function initSocket(server) {
           const Upload = require("../models/Upload")
           await Upload.findOneAndUpdate(
             { uploadId: job.uploadId },
-            { status: finalStatus === "COMPLETED" ? "COMPLETED" : "FAILED" }
+            { status: finalStatus === "COMPLETED" ? "COMPLETED" : finalStatus === "FAILED" ? "PAID" : "COMPLETED" }
           )
+
+          // ── OTP: finalize based on job outcome ──────────────────────────
+          const OTP = require("../models/OTP")
+          if (finalStatus === "FAILED") {
+            // Reset OTP so user can retry without admin intervention
+            await OTP.updateOne(
+              { uploadId: job.uploadId, kioskId: job.kioskId },
+              { $set: { used: false, inProgress: false } }
+            )
+            console.log(`🔁 OTP reset (job FAILED) — user can retry: ${job.uploadId}`)
+          } else {
+            // Permanently mark OTP as used (job succeeded / partially succeeded)
+            await OTP.updateOne(
+              { uploadId: job.uploadId, kioskId: job.kioskId },
+              { $set: { inProgress: false } }
+            )
+          }
         }
 
         console.log(`✅ Job ${printJobId} completed: ${finalStatus}`)
@@ -142,6 +195,7 @@ function initSocket(server) {
         console.error("print:result error:", err.message)
       }
     })
+
 
     // ── update:started — agent acknowledged OTA command ─────────────────
     socket.on("update:started", (data) => {

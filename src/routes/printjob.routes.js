@@ -68,6 +68,8 @@ router.get("/:printJobId", async (req, res) => {
         status:          job.status,
         totalPages:      job.totalPages,
         results:         job.results,
+        printerProgress: job.printerProgress,
+        failureReason:   job.failureReason,
         error:           job.error,
         createdAt:       job.createdAt,
         agentReceivedAt: job.agentReceivedAt,

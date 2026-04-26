@@ -42,6 +42,24 @@ const printJobSchema = new mongoose.Schema({
     error:    String
   }],
 
+  // Per-printer live progress (populated by agent during printing, polled by frontend)
+  printerProgress: [{
+    printer:     { type: String },    // "printer1" | "printer2"
+    printerName: { type: String },    // human-readable OS printer name
+    status: {
+      type: String,
+      enum: ["QUEUED", "DOWNLOADING", "PROCESSING", "PRINTING", "COMPLETED", "FAILED"],
+      default: "QUEUED"
+    },
+    filesDone:   { type: Number, default: 0 },
+    filesTotal:  { type: Number, default: 0 },
+    currentFile: { type: String },    // filename currently being processed
+    error:       { type: String }     // CUPS/lp error string if failed
+  }],
+
+  // Human-readable failure reason (set by agent on FAILED/PARTIAL_FAILURE)
+  failureReason: { type: String },
+
   // Timestamps
   agentReceivedAt: Date,
   completedAt:     Date,

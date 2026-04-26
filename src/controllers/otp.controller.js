@@ -29,10 +29,13 @@ exports.verifyOTP = async (req, res) => {
       return res.status(400).json({ error: "OTP expired" })
     }
 
-    // Mark OTP as used
+    // Mark OTP as in-progress (temporarily lock it to prevent double-use)
+    // It will be permanently marked 'used' only if the print job succeeds.
+    // If job FAILS, the OTP is reset to unused so the user can retry.
     record.used = true
+    record.inProgress = true
     await record.save()
-    console.log('✅ OTP marked as used')
+    console.log('✅ OTP marked as used (pending job completion)')
 
     // Sync otpUsed on Transaction — try uploadId first, fallback to otpGenerated
     const txUpdate = await Transaction.updateOne(

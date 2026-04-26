@@ -9,7 +9,7 @@ const { pushUpdateToAll, pushUpdateToKiosk, getConnectedAgents, isAgentOnline } 
  */
 router.post("/update-all", (req, res) => {
   try {
-    const { version } = req.body
+    const version = req.body?.version
     const count = pushUpdateToAll(version)
 
     res.json({
@@ -30,7 +30,7 @@ router.post("/update-all", (req, res) => {
 router.post("/:kioskId/update", (req, res) => {
   try {
     const { kioskId } = req.params
-    const { version } = req.body
+    const version = req.body?.version
 
     const sent = pushUpdateToKiosk(kioskId, version)
     if (!sent) {
